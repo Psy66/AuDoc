@@ -36,7 +36,10 @@ function Test-CommandExists($command) {
 }
 
 function Test-PythonPackageInstalled($package) {
-    try { return (pip show $package -ErrorAction Stop) -ne $null }
+    try { 
+        $null = pip list --format=json | ConvertFrom-Json | Where-Object { $_.name -eq $package }
+        return $true
+    }
     catch { return $false }
 }
 
@@ -94,6 +97,9 @@ foreach ($app in $apps) {
         if ($app.Params) { $args += "--params=`"$($app.Params)`"" }
         choco install $app.Name @args
     }
+    else {
+        Write-Host "$($app.Name) уже установлен" -ForegroundColor $colors.info
+    }
     Write-Host "$($app.Name) готов" -ForegroundColor $colors.success
 }
 
@@ -115,30 +121,56 @@ $cuda = Get-CUDAVersion
 Write-Host "GPU: $($gpu.Info)" -ForegroundColor $colors.info
 Write-Host "CUDA: $(if ($cuda) { $cuda } else { 'Не найдена' })" -ForegroundColor $colors.info
 
-$torchArgs = if ($gpu.IsNVIDIA -and $cuda) {
-    "--index-url https://download.pytorch.org/whl/cu$($cuda.Replace('.',''))"
+$torchIndex = if ($gpu.IsNVIDIA -and $cuda) {
+    "https://download.pytorch.org/whl/cu$($cuda.Replace('.',''))"
 } else {
-    "--index-url https://download.pytorch.org/whl/cpu"
+    "https://download.pytorch.org/whl/cpu"
 }
 
 # Python Packages
 $packages = @(
-    "torch", "torchaudio", "ffmpeg-python", "librosa>=0.10.0",
-    "openai-whisper>=20231106", "pyannote.audio>=3.1", "soundfile"
+    @{Name = "torch"; ExtraArgs = "--index-url $torchIndex"},
+    @{Name = "torchaudio"; ExtraArgs = "--index-url $torchIndex"},
+    @{Name = "ffmpeg-python"},
+    @{Name = "librosa"; Version = ">=0.10.0"},
+    @{Name = "openai-whisper"; Version = ">=20231106"},
+    @{Name = "pyannote.audio"; Version = ">=3.1"},
+    @{Name = "soundfile"}
 )
 
 foreach ($pkg in $packages) {
-    $pkgName = $pkg -replace "[>=].*", ""
+    $pkgName = $pkg.Name
+    $pkgVersion = if ($pkg.Version) { $pkg.Version } else { "" }
+    $fullPkgName = "$pkgName$pkgVersion"
+    
     if (-not (Test-PythonPackageInstalled $pkgName)) {
-        Write-Host "Установка $pkg..." -ForegroundColor $colors.warning
-        $installArgs = if ($pkgName -eq "torch" -or $pkgName -eq "torchaudio") {
-            "$pkg $torchArgs"
-        } else {
-            $pkg
+        Write-Host "Установка $fullPkgName..." -ForegroundColor $colors.warning
+        $installCmd = "pip install $fullPkgName"
+        if ($pkg.ExtraArgs) { $installCmd += " $($pkg.ExtraArgs)" }
+        
+        try {
+            Invoke-Expression $installCmd
+            Write-Host "$pkgName успешно установлен" -ForegroundColor $colors.success
         }
-        pip install $installArgs
+        catch {
+            Write-Host "Ошибка при установке $pkgName: $_" -ForegroundColor $colors.error
+        }
     }
-    Write-Host "$pkgName готов" -ForegroundColor $colors.success
+    else {
+        Write-Host "$pkgName уже установлен" -ForegroundColor $colors.info
+    }
+}
+
+# 5. Special handling for Whisper if previous installation failed
+if (-not (Test-PythonPackageInstalled "whisper")) {
+    Write-Host "Попытка альтернативной установки Whisper..." -ForegroundColor $colors.warning
+    try {
+        pip install git+https://github.com/openai/whisper.git
+        Write-Host "Whisper успешно установлен из GitHub" -ForegroundColor $colors.success
+    }
+    catch {
+        Write-Host "Не удалось установить Whisper: $_" -ForegroundColor $colors.error
+    }
 }
 #endregion
 
@@ -152,7 +184,7 @@ $checks = @(
     @{ Name = "Python"; Test = { Test-CommandExists "python" } }
     @{ Name = "PyTorch"; Test = { Test-PythonPackageInstalled "torch" } }
     @{ Name = "Whisper"; Test = { Test-PythonPackageInstalled "whisper" } }
-    @{ Name = "Pyannote"; Test = { Test-PythonPackageInstalled "pyannote" } }
+    @{ Name = "Pyannote"; Test = { Test-PythonPackageInstalled "pyannote.audio" } }
 )
 
 foreach ($check in $checks) {
