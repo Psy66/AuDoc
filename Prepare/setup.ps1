@@ -187,7 +187,7 @@ foreach ($pkg in $packages) {
 }
 
 # 5. Special handling for Whisper if previous installation failed
-if (-not (Test-PythonPackageInstalled "whisper")) {
+if ((-not (Test-PythonPackageInstalled "whisper")) -and (-not (Test-PythonPackageInstalled "openai-whisper"))) {
     Write-Host "Попытка альтернативной установки Whisper..." -ForegroundColor $colors.warning
     try {
         pip install git+https://github.com/openai/whisper.git
@@ -208,7 +208,7 @@ $checks = @(
     @{ Name = "CMake"; Test = { Test-CommandExists "cmake" } }
     @{ Name = "Python"; Test = { Test-CommandExists "python" } }
     @{ Name = "PyTorch"; Test = { Test-PythonPackageInstalled "torch" } }
-    @{ Name = "Whisper"; Test = { Test-PythonPackageInstalled "whisper" } }
+    @{ Name = "Whisper"; Test = { Test-PythonPackageInstalled "openai-whisper" } }
     @{ Name = "Pyannote"; Test = { Test-PythonPackageInstalled "pyannote.audio" } }
 )
 
