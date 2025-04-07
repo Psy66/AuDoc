@@ -22,21 +22,9 @@
 
 ## Установка
 
-1. **Автоматическая установка** (рекомендуется):
    - Запустите `install.bat` из папки `prepare`
    - Подтвердите запрос UAC (требуются права администратора)
    - Дождитесь завершения (5-25 минут)
-
-2. **Ручная установка**:
-   - Установите [Chocolatey](https://chocolatey.org/install)
-   - Установите зависимости:
-     ```cmd
-     choco install -y ffmpeg cmake --version=3.31.6
-     ```
-   - Установите Python пакеты:
-     ```cmd
-     pip install torch torchaudio ffmpeg-python librosa>=0.10.0 openai-whisper>=20231106 pyannote.audio>=3.1 soundfile
-     ```
 
 ## Использование
 
