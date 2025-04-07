@@ -62,7 +62,7 @@ class AudioTranscriber:
 
 			login(token=token)
 
-			max_retries = 5  # Увеличили количество попыток до 5
+			max_retries = 10
 			retry_delay = 5
 
 			for attempt in range(max_retries):
@@ -102,7 +102,16 @@ class AudioTranscriber:
 		"""Load Pyannote pipeline with automatic download if needed"""
 		AudioTranscriber._download_pyannote_model(model_dir, hf_token)
 		os.environ["PYANNOTE_CACHE"] = model_dir
-		return Pipeline.from_pretrained("pyannote/speaker-diarization", use_auth_token=True)
+
+		# Явно передаем токен в Pipeline
+		token = hf_token or HfFolder.get_token() or AudioTranscriber.DEFAULT_HF_TOKEN
+		if not token:
+			raise ValueError("Hugging Face token is required for Pyannote")
+
+		return Pipeline.from_pretrained(
+			"pyannote/speaker-diarization",
+			use_auth_token=token  # Передаем токен явно
+		)
 
 	@staticmethod
 	def _process_segment(audio, start, end, speaker, model):
@@ -176,6 +185,6 @@ if __name__ == "__main__":
 		'pyannote_dir': "models/pyannote",  # Directory for Pyannote models
 		'audio_file': "input.wav",  # Input audio file
 		'output_file': "output.txt",  # Output text file
-		'hf_token': "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"  # Ваш токен
+		'hf_token': "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"  # Your Hugging Face access token
 	}
 	AudioTranscriber.run(config)
