@@ -8,7 +8,6 @@ pipeline:
     segmentation: pyannote/segmentation@2022.07
     segmentation_batch_size: 32
 
-
 params:
   clustering:
     method: centroid
