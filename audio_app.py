@@ -15,6 +15,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class AudioTranscriber:
+	# Preinstalled tokens
+	DEFAULT_HF_TOKEN = "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"
+
 	@staticmethod
 	def get_relative_path(*path_parts):
 		base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,23 +44,25 @@ class AudioTranscriber:
 		return model_path
 
 	@staticmethod
-	def _download_pyannote_model(model_dir: str):
+	def _download_pyannote_model(model_dir: str, hf_token: str = None):
 		"""Download Pyannote models with authentication and retry logic"""
 		os.makedirs(model_dir, exist_ok=True)
 
 		if not os.listdir(model_dir):
 			logger.info("Downloading Pyannote models...")
 
-			# Check if token exists
-			token = HfFolder.get_token()
+			# Use HfFolder.get_token() if hf_token is not provided
+			token = hf_token or HfFolder.get_token() or AudioTranscriber.DEFAULT_HF_TOKEN
+
 			if not token:
 				logger.warning("Pyannote model requires authentication...")
 				logger.info("Please visit https://huggingface.co/pyannote/speaker-diarization")
 				logger.info("Accept the agreement and create access token at https://huggingface.co/settings/tokens")
 				token = input("Enter your Hugging Face access token: ").strip()
-				login(token=token)
 
-			max_retries = 3
+			login(token=token)
+
+			max_retries = 5  # Увеличили количество попыток до 5
 			retry_delay = 5
 
 			for attempt in range(max_retries):
@@ -66,7 +71,8 @@ class AudioTranscriber:
 						"pyannote/speaker-diarization",
 						cache_dir=model_dir,
 						use_auth_token=True,
-						resume_download=True
+						resume_download=True,
+						local_files_only=False
 					)
 					logger.info(f"Pyannote models downloaded to: {model_dir}")
 					return
@@ -79,6 +85,8 @@ class AudioTranscriber:
 					raise
 				except Exception as e:
 					logger.error(f"Failed to download Pyannote models: {str(e)}")
+					if "401" in str(e):
+						logger.error("Invalid or expired token. Please check your Hugging Face token.")
 					logger.error("You need to accept the license agreement at:")
 					logger.error("https://huggingface.co/pyannote/speaker-diarization")
 					raise
@@ -90,9 +98,9 @@ class AudioTranscriber:
 		return load_model(model_path)
 
 	@staticmethod
-	def _load_pyannote(model_dir: str):
+	def _load_pyannote(model_dir: str, hf_token: str = None):
 		"""Load Pyannote pipeline with automatic download if needed"""
-		AudioTranscriber._download_pyannote_model(model_dir)
+		AudioTranscriber._download_pyannote_model(model_dir, hf_token)
 		os.environ["PYANNOTE_CACHE"] = model_dir
 		return Pipeline.from_pretrained("pyannote/speaker-diarization", use_auth_token=True)
 
@@ -122,7 +130,8 @@ class AudioTranscriber:
 			)
 
 			pipeline = AudioTranscriber._load_pyannote(
-				AudioTranscriber.get_relative_path(config['pyannote_dir'])
+				AudioTranscriber.get_relative_path(config['pyannote_dir']),
+				hf_token=config.get('hf_token')
 			)
 
 			# Check audio file exists
@@ -166,6 +175,7 @@ if __name__ == "__main__":
 		'whisper_dir': "models/whisper",  # Directory for Whisper models
 		'pyannote_dir': "models/pyannote",  # Directory for Pyannote models
 		'audio_file': "input.wav",  # Input audio file
-		'output_file': "output.txt"  # Output text file
+		'output_file': "output.txt",  # Output text file
+		'hf_token': "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"  # Ваш токен
 	}
 	AudioTranscriber.run(config)
