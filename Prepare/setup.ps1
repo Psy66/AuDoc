@@ -16,6 +16,7 @@ $ProgressPreference = "SilentlyContinue"
 # Проверка прав администратора
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "[ОШИБКА] Требуются права администратора!`nЗапустите скрипт от имени администратора." -ForegroundColor Red
+    timeout /t 5
     exit 1
 }
 
@@ -37,8 +38,8 @@ function Test-CommandExists($command) {
 
 function Test-PythonPackageInstalled($package) {
     try { 
-        $null = pip list --format=json | ConvertFrom-Json | Where-Object { $_.name -eq $package }
-        return $true
+        $installed = pip list --format=json | ConvertFrom-Json | Where-Object { $_.name -eq $package }
+        return [bool]$installed
     }
     catch { return $false }
 }
@@ -74,12 +75,22 @@ Write-Host "`n=== УСТАНОВКА СРЕДЫ АУДИО-ТРАНСКРИБА�
 Write-Host "[1/5] ПРОВЕРКА CHOCOLATEY..." -ForegroundColor $colors.header
 if (-not (Test-CommandExists "choco")) {
     Write-Host "Установка Chocolatey..." -ForegroundColor $colors.warning
-    Set-ExecutionPolicy Bypass -Scope Process -Force
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
-    iex (New-Object Net.WebClient).DownloadString('https://chocolatey.org/install.ps1')
-    refreshenv
+    try {
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+        iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+        refreshenv
+        Write-Host "Chocolatey успешно установлен" -ForegroundColor $colors.success
+    }
+    catch {
+        Write-Host "Ошибка установки Chocolatey: $_" -ForegroundColor $colors.error
+        timeout /t 10
+        exit 1
+    }
 }
-Write-Host "Chocolatey готов" -ForegroundColor $colors.success
+else {
+    Write-Host "Chocolatey уже установлен" -ForegroundColor $colors.info
+}
 
 # 2. System Dependencies
 Write-Host "`n[2/5] СИСТЕМНЫЕ ЗАВИСИМОСТИ..." -ForegroundColor $colors.header
@@ -95,22 +106,36 @@ foreach ($app in $apps) {
         $args = @("-y")
         if ($app.Version) { $args += "--version=$($app.Version)" }
         if ($app.Params) { $args += "--params=`"$($app.Params)`"" }
-        choco install $app.Name @args
+        
+        try {
+            Start-Process -FilePath "choco" -ArgumentList $args -Wait -NoNewWindow
+            Write-Host "$($app.Name) успешно установлен" -ForegroundColor $colors.success
+        }
+        catch {
+            Write-Host "Ошибка установки $($app.Name): $_" -ForegroundColor $colors.error
+        }
     }
     else {
         Write-Host "$($app.Name) уже установлен" -ForegroundColor $colors.info
     }
-    Write-Host "$($app.Name) готов" -ForegroundColor $colors.success
 }
 
 # 3. Environment Path
 Write-Host "`n[3/5] НАСТРОЙКА ПЕРЕМЕННЫХ СРЕДЫ..." -ForegroundColor $colors.header
 $ffmpegPath = "$env:ProgramFiles\FFmpeg\bin"
 if ($env:Path -notmatch [regex]::Escape($ffmpegPath)) {
-    [Environment]::SetEnvironmentVariable("Path", "$env:Path;$ffmpegPath", "Machine")
-    $env:Path += ";$ffmpegPath"
+    try {
+        [Environment]::SetEnvironmentVariable("Path", "$env:Path;$ffmpegPath", "Machine")
+        $env:Path += ";$ffmpegPath"
+        Write-Host "PATH успешно обновлен" -ForegroundColor $colors.success
+    }
+    catch {
+        Write-Host "Ошибка обновления PATH: $_" -ForegroundColor $colors.error
+    }
 }
-Write-Host "PATH настроен" -ForegroundColor $colors.success
+else {
+    Write-Host "PATH уже содержит FFmpeg" -ForegroundColor $colors.info
+}
 
 # 4. Python Environment
 Write-Host "`n[4/5] PYTHON И БИБЛИОТЕКИ..." -ForegroundColor $colors.header
@@ -153,7 +178,7 @@ foreach ($pkg in $packages) {
             Write-Host "$pkgName успешно установлен" -ForegroundColor $colors.success
         }
         catch {
-            Write-Host "Ошибка при установке $pkgName: $_" -ForegroundColor $colors.error
+            Write-Host "Ошибка при установке $pkgName : $($_.Exception.Message)" -ForegroundColor $colors.error
         }
     }
     else {
@@ -169,7 +194,7 @@ if (-not (Test-PythonPackageInstalled "whisper")) {
         Write-Host "Whisper успешно установлен из GitHub" -ForegroundColor $colors.success
     }
     catch {
-        Write-Host "Не удалось установить Whisper: $_" -ForegroundColor $colors.error
+        Write-Host "Не удалось установить Whisper: $($_.Exception.Message)" -ForegroundColor $colors.error
     }
 }
 #endregion
@@ -213,4 +238,15 @@ if ($results.Status -contains "ОШИБКА") {
 
 Write-Host "`nСовет: Для лучшей производительности используйте GPU с поддержкой CUDA" -ForegroundColor $colors.warning
 Write-Host "Готово! Может потребоваться перезагрузка." -ForegroundColor $colors.header
+
+# Ожидание нажатия клавиши перед закрытием
+Write-Host "`nНажмите любую клавишу для выхода..." -ForegroundColor $colors.header
+try {
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+}
+catch {
+    # Если ReadKey не доступен (например, в ISE)
+    Write-Host "Для выхода закройте это окно" -ForegroundColor $colors.warning
+    timeout /t 30
+}
 #endregion
