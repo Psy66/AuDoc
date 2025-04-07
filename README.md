@@ -31,7 +31,7 @@
 1. Поместите аудиофайл (в формате WAV) в корень проекта с именем `input.wav`
 2. Запустите:
    ```cmd
-   python main.py
+   python audio_app.py
    ```
 3. Результат будет сохранен в output.txt
 
